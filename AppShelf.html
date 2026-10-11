@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My App Laucher</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:14px 16px;background:#1e293b;position:sticky;top:0;z-index:5}
+h1{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
+.status{font-size:12px;color:#94a3b8}
+.tools{display:flex;gap:6px;flex-wrap:wrap}
+button{background:#3b82f6;color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:14px;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+button.secondary{background:#334155}
+button.danger{background:#dc2626}
+main{padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.card{background:#1e293b;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.card h3{margin:0;font-size:15px;word-break:break-word}
+.card small{color:#94a3b8;font-size:12px;word-break:break-all}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:#334155;color:#cbd5e1;width:fit-content}
+.badge.link{background:#065f46;color:#d1fae5}
+.card .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+.card .row button{padding:7px 10px;font-size:13px}
+.empty{padding:40px;text-align:center;color:#94a3b8;grid-column:1/-1}
+dialog{background:#1e293b;color:#e2e8f0;border:0;border-radius:12px;width:min(520px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+input,select,textarea{width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:9px;font-size:14px;margin-top:6px}
+textarea{min-height:160px;font-family:monospace}
+label{display:block;margin-top:12px;font-size:13px;color:#94a3b8}
+.hint{font-size:12px;color:#94a3b8;margin-top:6px}
+.dlg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.qr-box{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:12px}
+.qr-box img{width:260px;height:260px;max-width:100%;background:#fff;border-radius:12px;padding:10px}
+.qr-link{font-size:12px;color:#94a3b8;word-break:break-all;text-align:center}
+#runner{position:fixed;inset:0;background:#000;display:none;flex-direction:column;z-index:10}
+#runner .bar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;background:#1e293b}
+#runner iframe{flex:1;border:0;background:#fff;width:100%}
+#busy{position:fixed;inset:0;background:rgba(15,23,42,.92);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:20;text-align:center;padding:20px}
+.spin{width:48px;height:48px;border:5px solid #334155;border-top-color:#3b82f6;border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#busyMsg{font-size:15px;color:#e2e8f0;max-width:320px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>My App Laucher <span class="status" id="netStatus"></span></h1>
+  <div class="tools">
+    <button id="addBtn">+ Add app</button>
+    <button class="secondary" id="backupBtn">Backup</button>
+    <button class="secondary" id="restoreBtn">Restore</button>
+    <input type="file" id="restoreFile" accept=".json" hidden>
+  </div>
+</header>
+
+<main id="list"></main>
+
+<div id="busy">
+  <div class="spin"></div>
+  <div id="busyMsg">Updating…</div>
+</div>
+
+<!-- Add app dialog -->
+<dialog id="addDlg">
+  <div style="font-size:17px;font-weight:600">Add an app</div>
+  <label>App name</label>
+  <input id="nameIn" placeholder="e.g. OTP Manager">
+
+  <label>Source</label>
+  <select id="typeIn">
+    <option value="file">Upload or paste HTML (saved on device)</option>
+    <option value="link">GitHub or web link (saved on device)</option>
+  </select>
+
+  <div id="fileBox">
+    <label>Upload .html file</label>
+    <input type="file" id="fileIn" accept=".html,.htm,text/html">
+    <label>Or paste HTML code</label>
+    <textarea id="htmlIn" placeholder="<!DOCTYPE html> ..."></textarea>
+  </div>
+
+  <div id="linkBox" style="display:none">
+    <label>Link to the app</label>
+    <input id="urlIn" placeholder="https://github.com/user/repo/blob/main/index.html">
+    <div class="hint">GitHub file links, raw links, and GitHub Pages links all work. The page is saved when you add it and only changes when you press Update.</div>
+  </div>
+
+  <div class="dlg-actions">
+    <button class="secondary" id="cancelAdd">Cancel</button>
+    <button id="saveAdd">Save</button>
+  </div>
+</dialog>
+
+<!-- QR dialog -->
+<dialog id="qrDlg">
+  <div style="font-size:17px;font-weight:600">Share with QR code</div>
+  <div class="qr-box">
+    <img id="qrImg" alt="QR code">
+    <div class="qr-link" id="qrLink"></div>
+    <div class="hint" id="qrHint">Scan this code with a phone camera to open the link.</div>
+  </div>
+  <div class="dlg-actions">
+    <button class="secondary" id="copyQr">Copy link</button>
+    <button id="closeQr">Close</button>
+  </div>
+</dialog>
+
+<!-- Runner -->
+<div id="runner">
+  <div class="bar">
+    <button class="secondary" id="closeBtn">← Back</button>
+    <span id="runTitle" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <span style="width:60px"></span>
+  </div>
+  <iframe id="frame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-popups"></iframe>
+</div>
+
+<script>
+// ---------- Storage (IndexedDB) ----------
+const DB_NAME = 'vaulthub-db';
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('apps', { keyPath: 'id' });
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+async function dbRun(mode, fn) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('apps', mode);
+    const req = fn(t.objectStore('apps'));
+    t.oncomplete = () => resolve(req ? req.result : undefined);
+    t.onerror = () => reject(t.error);
+  });
+}
+const allApps = () => dbRun('readonly', s => s.getAll());
+const putApp  = a => dbRun('readwrite', s => s.put(a));
+const delApp  = id => dbRun('readwrite', s => s.delete(id));
+
+// ---------- Helpers ----------
+const $ = id => document.getElementById(id);
+const list = $('list'), addDlg = $('addDlg'), frame = $('frame'), runner = $('runner'), qrDlg = $('qrDlg');
+const cooldownUntil = {};
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function showBusy(msg) { $('busyMsg').textContent = msg; $('busy').style.display = 'flex'; }
+function hideBusy() { $('busy').style.display = 'none'; }
+
+// Turn a GitHub file link into a downloadable raw link
+function toFetchUrl(input) {
+  const x = new URL(input.trim());
+  if (x.hostname === 'github.com') {
+    const p = x.pathname.split('/').filter(Boolean);
+    if (p.length >= 5 && p[2] === 'blob')
+      return `https://raw.githubusercontent.com/${p[0]}/${p[1]}/${p.slice(3).join('/')}`;
+    if (p.length === 2)
+      return `https://raw.githubusercontent.com/${p[0]}/${p[1]}/HEAD/index.html`;
+  }
+  if (x.pathname.endsWith('/')) x.pathname += 'index.html';
+  return x.href;
+}
+
+// Download the page and add a <base> tag so its relative files still resolve
+async function fetchApp(input) {
+  const url = toFetchUrl(input);
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('The server replied with HTTP ' + res.status);
+  let html = await res.text();
+  const tag = `<base href="${new URL('.', url).href}">`;
+  html = /<head[^>]*>/i.test(html)
+    ? html.replace(/<head[^>]*>/i, m => m + tag)
+    : tag + html;
+  return html;
+}
+
+// ---------- Render cards ----------
+async function render() {
+  const apps = (await allApps()).sort((a, b) => b.added - a.added);
+  list.innerHTML = '';
+  if (!apps.length) {
+    list.innerHTML = '<div class="empty">No apps yet. Tap "+ Add app" to upload HTML or add a link.</div>';
+    return;
+  }
+  for (const a of apps) {
+    const c = document.createElement('div');
+    c.className = 'card';
+    const isLink = a.type === 'link';
+    c.innerHTML = `
+      <span class="badge ${isLink ? 'link' : ''}">${isLink ? 'Link' : 'Saved file'}</span>
+      <h3></h3>
+      <small class="src"></small>
+      <small class="meta"></small>
+      <div class="row">
+        <button class="open">Open</button>
+        ${isLink ? '<button class="secondary qr">QR</button>' : ''}
+        ${isLink ? '<button class="secondary upd">Update</button>' : ''}
+        <button class="secondary ren">Rename</button>
+        <button class="danger del">Delete</button>
+      </div>`;
+    c.querySelector('h3').textContent = a.name;
+    c.querySelector('.src').textContent = isLink ? a.src : '';
+    const kb = (a.html.length / 1024).toFixed(1) + ' KB';
+    const when = new Date(a.updated || a.added).toLocaleString();
+    c.querySelector('.meta').textContent = `${kb} · ${isLink ? 'Last updated' : 'Saved'} ${when}`;
+
+    c.querySelector('.open').onclick = () => openApp(a);
+    if (isLink) {
+      c.querySelector('.qr').onclick = () => showQR(a);
+      const ub = c.querySelector('.upd');
+      ub.onclick = () => updateLink(a);
+      if ((cooldownUntil[a.id] || 0) > Date.now()) {
+        ub.disabled = true;
+        ub.textContent = 'Wait 20s';
+      }
+    }
+    c.querySelector('.ren').onclick = async () => {
+      const n = prompt('New name', a.name);
+      if (n && n.trim()) { a.name = n.trim(); await putApp(a); render(); }
+    };
+    c.querySelector('.del').onclick = async () => {
+      if (confirm(`Delete "${a.name}"? This cannot be undone.`)) { await delApp(a.id); render(); }
+    };
+    list.appendChild(c);
+  }
+}
+
+// ---------- QR code (link apps only) ----------
+function showQR(a) {
+  const link = a.src;
+  const img = $('qrImg');
+  img.onerror = () => { $('qrHint').textContent = 'Could not create the QR code. Check your internet connection and try again.'; };
+  img.onload = () => { $('qrHint').textContent = 'Scan this code with a phone camera to open the link.'; };
+  img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=520x520&margin=10&data=' + encodeURIComponent(link);
+  $('qrLink').textContent = link;
+  qrDlg.showModal();
+}
+$('closeQr').onclick = () => qrDlg.close();
+$('copyQr').onclick = async () => {
+  const text = $('qrLink').textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    alert('Link copied.');
+  } catch (e) {
+    prompt('Copy this link:', text);
+  }
+};
+
+// ---------- Update (link apps only, confirmed, locked for 10s, retry after 20s on failure) ----------
+async function updateLink(a) {
+  if (!confirm(`Do you truly want to update "${a.name}" from its link? The saved copy will be replaced with the latest version.`)) return;
+
+  showBusy(`Updating "${a.name}"… please wait`);
+  const minWait = sleep(10000);
+  let ok = false, reason = '';
+  try {
+    a.html = await fetchApp(a.src);
+    a.updated = Date.now();
+    await putApp(a);
+    ok = true;
+  } catch (e) {
+    reason = e.message;
+  }
+  await minWait;
+  hideBusy();
+
+  if (ok) {
+    alert(`"${a.name}" updated.`);
+  } else {
+    cooldownUntil[a.id] = Date.now() + 20000;
+    setTimeout(render, 20000);
+    alert(`Website didn't update. Please retry again after 20 seconds.\n\n${reason}`);
+  }
+  render();
+}
+
+// ---------- Add app ----------
+$('addBtn').onclick = () => {
+  $('nameIn').value = ''; $('htmlIn').value = ''; $('fileIn').value = ''; $('urlIn').value = '';
+  $('typeIn').value = 'file'; toggleType();
+  addDlg.showModal();
+};
+$('cancelAdd').onclick = () => addDlg.close();
+$('typeIn').onchange = toggleType;
+function toggleType() {
+  const isLink = $('typeIn').value === 'link';
+  $('fileBox').style.display = isLink ? 'none' : 'block';
+  $('linkBox').style.display = isLink ? 'block' : 'none';
+}
+$('fileIn').onchange = async () => {
+  const f = $('fileIn').files[0];
+  if (!f) return;
+  $('htmlIn').value = await f.text();
+  if (!$('nameIn').value.trim()) $('nameIn').value = f.name.replace(/\.html?$/i, '');
+};
+$('saveAdd').onclick = async () => {
+  const name = $('nameIn').value.trim() || 'Untitled app';
+  let app = { id: Date.now() + '-' + Math.random().toString(36).slice(2), name, added: Date.now() };
+
+  if ($('typeIn').value === 'link') {
+    const url = $('urlIn').value.trim();
+    if (!url) { alert('Paste a link first.'); return; }
+    $('saveAdd').disabled = true; $('saveAdd').textContent = 'Loading…';
+    try {
+      app.type = 'link';
+      app.src = url;
+      app.html = await fetchApp(url);
+      app.updated = app.added;
+    } catch (e) {
+      alert('Could not load that link. Make sure it is public, or download the file and upload it instead.\n\n' + e.message);
+      $('saveAdd').disabled = false; $('saveAdd').textContent = 'Save';
+      return;
+    }
+    $('saveAdd').disabled = false; $('saveAdd').textContent = 'Save';
+  } else {
+    const html = $('htmlIn').value.trim();
+    if (!html) { alert('Upload an HTML file or paste the code first.'); return; }
+    app.type = 'file';
+    app.html = html;
+  }
+
+  await putApp(app);
+  addDlg.close();
+  render();
+};
+
+// ---------- Run app (always from the saved copy, works offline) ----------
+function openApp(a) {
+  $('runTitle').textContent = a.name;
+  frame.srcdoc = a.html;
+  runner.style.display = 'flex';
+}
+$('closeBtn').onclick = () => { frame.srcdoc = ''; runner.style.display = 'none'; };
+
+// ---------- Backup / Restore ----------
+$('backupBtn').onclick = async () => {
+  const ls = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    ls[k] = localStorage.getItem(k);
+  }
+  const data = { version: 2, date: new Date().toISOString(), apps: await allApps(), localStorage: ls };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'vaulthub-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+$('restoreBtn').onclick = () => $('restoreFile').click();
+$('restoreFile').onchange = async () => {
+  const f = $('restoreFile').files[0];
+  if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!confirm('Restore this backup? Matching items will be overwritten.')) return;
+    for (const a of d.apps || []) await putApp(a);
+    for (const [k, v] of Object.entries(d.localStorage || {})) localStorage.setItem(k, v);
+    alert('Restore complete.');
+    render();
+  } catch (e) {
+    alert('That file is not a valid backup.');
+  }
+};
+
+// ---------- Online / offline indicator ----------
+function netStatus() {
+  $('netStatus').textContent = navigator.onLine ? '● online' : '● offline';
+}
+window.addEventListener('online', netStatus);
+window.addEventListener('offline', netStatus);
+netStatus();
+
+// Ask the browser to keep this site's data
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+
+render();
+</script>
+</body>
+</html>
