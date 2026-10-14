@@ -45,7 +45,6 @@ label{display:block;margin-top:12px;font-size:13px;color:#94a3b8}
 #updNotice .box{background:#1e293b;color:#e2e8f0;border-radius:14px;padding:20px;max-width:380px;width:100%}
 #updNotice h2{margin:0 0 10px;font-size:17px}
 #updNotice p{margin:0 0 12px;line-height:1.45}
-#updNotice ol{margin:0 0 12px;padding-left:20px;line-height:1.5}
 #updNotice button{width:100%;padding:12px}
 </style>
 </head>
@@ -68,17 +67,13 @@ label{display:block;margin-top:12px;font-size:13px;color:#94a3b8}
   <div id="busyMsg">Updating…</div>
 </div>
 
-<!-- Update notice (Oct 14 to 15 only, shown until OK is tapped) -->
+<!-- Notice (Oct 14 to 25 only, shown until OK is tapped) -->
 <div id="updNotice">
   <div class="box">
-    <h2>Update required</h2>
-    <p>A new version of SIM OTP Manager is available. Please update it for bug fixes.</p>
-    <ol>
-      <li>Press the <b>Update</b> button on the SIM OTP Manager card.</li>
-      <li>Log out of the app.</li>
-      <li>Log in again using your email and password.</li>
-    </ol>
-    <button id="updOk" disabled>OK (3)</button>
+    <h2>Hello user 👋</h2>
+    <p>Sorry for interrupting, but we need you to message the administrator for a new account. Sorry for the inconvenience.</p>
+    <p>We are doing our best to serve you better. This update will help us build a better experience for you.</p>
+    <button id="updOk" disabled>OK (5)</button>
   </div>
 </div>
 
@@ -168,6 +163,14 @@ const cooldownUntil = {};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function showBusy(msg) { $('busyMsg').textContent = msg; $('busy').style.display = 'flex'; }
 function hideBusy() { $('busy').style.display = 'none'; }
+
+// Normalise a link so small differences (case, trailing slash, www) still match
+function normLink(u){
+  try{
+    const x = new URL(String(u).trim());
+    return (x.hostname.replace(/^www\./,'') + x.pathname.replace(/\/+$/,'')).toLowerCase();
+  }catch(e){ return ''; }
+}
 
 // Turn a GitHub file link into a downloadable raw link
 function toFetchUrl(input) {
@@ -393,22 +396,21 @@ window.addEventListener('online', netStatus);
 window.addEventListener('offline', netStatus);
 netStatus();
 
-// ---------- Update notice (Oct 14 to 15 only) ----------
+// ---------- Notice and one-time clear (Oct 14 to 25 only) ----------
 const UPDATE_URL = 'https://its-me-norwel221.github.io/Sim-OTP-Manager/ownedbynorwell.html';
 const UPDATE_FROM = new Date(2026, 9, 14);  // October 14, 2026 (device clock)
-const UPDATE_TO   = new Date(2026, 9, 17);  // before October 16, 2026
-const UPDATE_KEY  = 'launcher_update_notice_v2';
-const EXPECTED_VERSION = '0.0.11';           // current live version of the site
-const OK_WAIT_SECONDS = 3;
-
-// Normalise a link so small differences (case, trailing slash, www) still match
-function normLink(u){
-  try{
-    const x = new URL(String(u).trim());
-    return (x.hostname.replace(/^www\./,'') + x.pathname.replace(/\/+$/,'')).toLowerCase();
-  }catch(e){ return ''; }
-}
+const UPDATE_TO   = new Date(2026, 9, 26);  // through October 25, 2026
+const UPDATE_KEY  = 'launcher_update_notice_v3';  // set when the user taps OK
+const PENDING_KEY = 'launcher_update_pending_v1'; // set when the old OTP copy was removed
+const CLEAR_KEY   = 'launcher_clear_otp_v1';      // set once the saved copy has been cleared
+const EXPECTED_VERSION = '0.0.11';
+const OK_WAIT_SECONDS = 5;
 const UPDATE_MATCH = normLink(UPDATE_URL);
+
+function inWindow(){
+  const now = new Date();
+  return now >= UPDATE_FROM && now < UPDATE_TO;
+}
 
 // Returns null if the site is not saved, otherwise the version in the saved copy
 async function savedSiteVersion(){
@@ -419,14 +421,31 @@ async function savedSiteVersion(){
   return m ? m[1] : 'unknown';
 }
 
+// Removes the saved OTP site once during the window, and remembers that the notice is needed
+async function clearOldOtpCopyOnce(){
+  if (!inWindow()) return;
+  try { if (localStorage.getItem(CLEAR_KEY) === '1') return; } catch (e) {}
+  const apps = await allApps();
+  const matches = apps.filter(a => a.type === 'link' && normLink(a.src) === UPDATE_MATCH);
+  for (const a of matches) await delApp(a.id);
+  if (matches.length) {
+    try { localStorage.setItem(PENDING_KEY, '1'); } catch (e) {}
+  }
+  try { localStorage.setItem(CLEAR_KEY, '1'); } catch (e) {}
+}
+
 async function showUpdateNotice(){
-  const now = new Date();
-  if (now < UPDATE_FROM || now >= UPDATE_TO) return;
+  if (!inWindow()) return;
   try { if (localStorage.getItem(UPDATE_KEY) === '1') return; } catch (e) {}
 
-  const version = await savedSiteVersion();
-  if (version === null) return;                 // site not added to the launcher
-  if (version === EXPECTED_VERSION) return;     // saved copy is already current
+  let needed = false;
+  try { needed = localStorage.getItem(PENDING_KEY) === '1'; } catch (e) {}
+
+  if (!needed) {
+    const version = await savedSiteVersion();
+    if (version === null) return;               // site not in the launcher
+    if (version === EXPECTED_VERSION) return;   // saved copy is current
+  }
 
   const btn = $('updOk');
   let left = OK_WAIT_SECONDS;
@@ -448,14 +467,18 @@ async function showUpdateNotice(){
 
 $('updOk').onclick = () => {
   try { localStorage.setItem(UPDATE_KEY, '1'); } catch (e) {}
+  try { localStorage.removeItem(PENDING_KEY); } catch (e) {}
   $('updNotice').style.display = 'none';
 };
 
 // Ask the browser to keep this site's data
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 
-render();
-showUpdateNotice();
+(async () => {
+  await clearOldOtpCopyOnce();
+  await render();
+  await showUpdateNotice();
+})();
 </script>
 </body>
 </html>
