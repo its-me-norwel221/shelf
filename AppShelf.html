@@ -41,6 +41,11 @@ label{display:block;margin-top:12px;font-size:13px;color:#94a3b8}
 .spin{width:48px;height:48px;border:5px solid #334155;border-top-color:#3b82f6;border-radius:50%;animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 #busyMsg{font-size:15px;color:#e2e8f0;max-width:320px}
+#updNotice{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:30}
+#updNotice .box{background:#1e293b;color:#e2e8f0;border-radius:14px;padding:20px;max-width:380px;width:100%}
+#updNotice h2{margin:0 0 10px;font-size:17px}
+#updNotice p{margin:0 0 12px;line-height:1.45}
+#updNotice button{width:100%;padding:12px}
 </style>
 </head>
 <body>
@@ -60,6 +65,16 @@ label{display:block;margin-top:12px;font-size:13px;color:#94a3b8}
 <div id="busy">
   <div class="spin"></div>
   <div id="busyMsg">Updating…</div>
+</div>
+
+<!-- Update notice (Oct 14 to 15 only, shown once per device, only if the update link is saved) -->
+<div id="updNotice">
+  <div class="box">
+    <h2>Update available</h2>
+    <p>A newer version of this app is available. Your current version is not 0.0.12. Please update the app for bug fixes.</p>
+    <p style="font-size:13px;color:#94a3b8">Tap OK to open the update page.</p>
+    <button id="updOk">OK</button>
+  </div>
 </div>
 
 <!-- Add app dialog -->
@@ -373,10 +388,50 @@ window.addEventListener('online', netStatus);
 window.addEventListener('offline', netStatus);
 netStatus();
 
+// ---------- Update notice (Oct 14 to 15 only, once per device, only if the site is saved) ----------
+const UPDATE_URL = 'https://its-me-norwel221.github.io/Sim-OTP-Manager/ownedbynorwell.html';
+const UPDATE_FROM = new Date(2026, 9, 14);  // October 14, 2026 (device clock)
+const UPDATE_TO   = new Date(2026, 9, 16);  // before October 16, 2026
+const UPDATE_KEY  = 'launcher_update_notice_v1';
+
+// Normalise a link so small differences (case, trailing slash, www, ?query) still match
+function normLink(u){
+  try{
+    const x = new URL(String(u).trim());
+    return (x.hostname.replace(/^www\./,'') + x.pathname.replace(/\/+$/,'')).toLowerCase();
+  }catch(e){ return ''; }
+}
+const UPDATE_MATCH = normLink(UPDATE_URL);
+
+async function hasSavedUpdateSite(){
+  const apps = await allApps();
+  return apps.some(a => a.type === 'link' && normLink(a.src) === UPDATE_MATCH);
+}
+
+async function showUpdateNotice() {
+  const now = new Date();
+  if (now < UPDATE_FROM || now >= UPDATE_TO) return;
+  try { if (localStorage.getItem(UPDATE_KEY) === '1') return; } catch (e) {}
+  if (!(await hasSavedUpdateSite())) return;   // only show if the site was added to the launcher
+  $('updNotice').style.display = 'flex';
+}
+$('updOk').onclick = () => {
+  try { localStorage.setItem(UPDATE_KEY, '1'); } catch (e) {}
+  $('updNotice').style.display = 'none';
+  const a = document.createElement('a');
+  a.href = UPDATE_URL;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};
+
 // Ask the browser to keep this site's data
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 
 render();
+showUpdateNotice();
 </script>
 </body>
 </html>
